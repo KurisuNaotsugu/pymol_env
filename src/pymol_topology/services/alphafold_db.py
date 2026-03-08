@@ -1,16 +1,17 @@
-# src/pymol_topology/services/alphafold_db.pyß
+# src/pymol_topology/services/alphafold_db.py
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence
 
 import requests
 
+from pymol_topology.api.alphafold import AlphaFoldAPI, AlphaFoldAPIConfig
 from pymol_topology.core.cache import default_cache_dir
-from pymol_topology.core.errors import FetchError, NotFoundError
+from pymol_topology.core.errors import FetchError
 from pymol_topology.core.http import make_session
-from pymol_topology.core.models import StructureArtifact
+from pymol_topology.core.models import ApiResponse, StructureArtifact
 
 
 @dataclass
@@ -40,6 +41,13 @@ class AlphaFoldDBClient:
         self.config = config or AlphaFoldDBConfig()
         self.session = session or make_session()
         self.cache_dir = self.config.cache_dir or default_cache_dir()
+        self._api = AlphaFoldAPI(
+            config=AlphaFoldAPIConfig(
+                api_base=self.config.api_base,
+                timeout_sec=self.config.timeout_sec,
+            ),
+            session=self.session,
+        )
 
     def fetch_structure(self, accession: str, prefer: Sequence[str] = ("cif", "pdb"), force: bool = False) -> StructureArtifact:
         """構造ファイルを取得
@@ -63,6 +71,21 @@ class AlphaFoldDBClient:
 
         self._download(url, local) # ダウンロードを実行
         return StructureArtifact(accession=acc, format=fmt, local_path=local, source_url=url)
+
+    def get_prediction_response(self, accession: str) -> ApiResponse:
+        """AlphaFold DB prediction API の生レスポンスを取得（検証・デバッグ用）
+
+        ステータスコードやヘッダ・本文をそのまま返す。4xx/5xx でも例外は上げず
+        ApiResponse を返すので、呼び出し側でレスポンスを検証できる。
+
+        Args:
+            accession: UniProt accession
+
+        Returns:
+            ApiResponse: status_code, headers, body（パース済みJSON）, raw_text
+        """
+        acc = self._normalize_accession(accession)
+        return self._api.get_prediction_response(acc)
 
     # -----------------------
     # internal
@@ -95,13 +118,7 @@ class AlphaFoldDBClient:
             Any: メタデータ
 
         """
-        url = f"{self.config.api_base}/prediction/{acc}"
-        r = self.session.get(url, timeout=self.config.timeout_sec)
-        if r.status_code == 404:
-            raise NotFoundError(f"AlphaFold DB: accession not found: {acc}")
-        if not r.ok:
-            raise FetchError(f"AlphaFold DB API error {r.status_code}: {r.text[:200]}")
-        return r.json()
+        return self._api.get_prediction_metadata(acc)
 
     def _pick_structure_url(self, meta: Any, prefer: Sequence[str]) -> tuple[str, str]:
         """メタデータから構造ファイル用のURLを選択
