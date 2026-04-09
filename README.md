@@ -302,26 +302,6 @@ PyMOL>show_feature_domain_infos rg_P08100
   spans:       [(285, 309)]
   color.name:  'olive'
 ```
-### 主要データクラス（どこで使うか）
-
-- `ApiResponse`（`src/api/base.py`）
-  - 形: `status_code: int`, `headers: dict[str, str]`, `body: Any`, `raw_text: str`
-  - 用途: `src/api` の戻り値として統一し、`src/services` が `body` を解釈
-- `StructureArtifact`（`src/core/models.py`）
-  - 形: `accession`, `format`, `local_path`, `source_url`, `checksum?`
-  - 用途: `AlphaFoldDBFetcherClient`（`src/api/alphafold.py`）の `fetch_structure()` の成果物（PyMOL load の入力）
-- `AminoAcidSequence`（`src/core/models.py`）
-  - 形: `value: str`（`normalized` / `matches()` を提供）
-  - 用途: AlphaFold と UniProt の配列比較に共通利用
-- `SequenceValidationResult`（`src/services/sequence_validation.py`）
-  - 形: `match`, `af_sequence`, `uniprot_sequence`, `message`
-  - 用途: 配列一致検証の結果を UI/CLI/PyMOL 側へ返す
-- `DomainInfo`（`src/converter/constractor.py`）
-  - 形: `domain_name`, `spans`（複数区間可）, `chain?`, `color?`（`ColorDef`）
-  - 用途: トポロジー領域の標準表現。`DomainInfoFactory` が UniProt features から生成し、`DomainColorScheme().color_fill(リスト)` で一覧に重複のない色名を付与
-- `ColorDef` / `DomainColorScheme`（`src/converter/constractor.py`）
-  - 形: `ColorDef` は主に PyMOL の**色名**（`name`）。`DomainColorScheme.color_fill` が `list[DomainInfo]` にパレット色を割り当て
-  - 用途: 着色前に `DomainColorScheme.color_fill` でリスト単位で埋め（色名は一覧内で重複しない）、`Painter` は `ColorDef.name` をそのまま `cmd.color` に渡す
 
 ## データ形式と流れ
 ### 構造取得
@@ -367,7 +347,6 @@ PyMOL>show_feature_domain_infos rg_P08100
 
 1. `UniprotApiClients.get_search_response(accession) -> ApiResponse` で UniProt を取得し、`domain_infos_from_response(resp, accession=..., config=..., chain=...)`（`src/converter/pipeline.py`）で `list[DomainInfo]` を得る（PyMOL の `preview_feature_domains_from_accession` / `register_feature_domain_subset` はこの流れをラップしている）
 
-
 2. 抽出: `UniprotExtractor.extract_features(resp, accession=...) -> list[UniprotFeatures]`
   - 各 `UniprotFeatures` は 1 件の feature について `feature`（型名）・`location`・`description` を保持する
 3. 成形: `DomainInfoFactory.extract_features(list[UniprotFeatures]) -> list[DomainInfo]`
@@ -375,3 +354,11 @@ PyMOL>show_feature_domain_infos rg_P08100
 4. 色付与: `DomainColorScheme().color_fill(list[DomainInfo])` で未設定分に `palette`（既定は `converter.color_palette.EXTRA_PYMOL_COLOR_NAMES`）を順に割り当て（一覧内で色名が重複しない）
 5. PyMOL 適用: `Painter.paint_domaininfo(cmd, object_name, domaininfo)` が `domaininfo.spans` から selection を組み立て、各 span に `cmd.color(color_name, selection)` を実行（`domaininfo` は 1 件ずつ）
 
+## ライセンス
+
+本リポジトリのソースコードおよび付随資料は、[Creative Commons Attribution-NonCommercial 4.0 International](https://creativecommons.org/licenses/by-nc/4.0/)（**CC BY-NC 4.0**）の下で提供されます。
+
+- **表示（BY）**: 利用・再配布・改変の際は、クレジット表示などライセンスが求める条件に従ってください（条文はリポジトリ直下の [`LICENSE`](LICENSE) および上記リンク先を参照）。
+- **非営利（NC）**: 営利目的の利用は許諾されません。
+
+法的効力のある説明は英語のライセンス全文を参照してください。要約や README の記述は参考情報です。
