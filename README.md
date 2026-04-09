@@ -206,22 +206,6 @@ show_feature_domain_infos rg_P12345
   registry_name: レジストリキー (例: rg_P12345)
 ```
 
-## プロジェクト構造（層と受け渡しデータ）
-
-このプロジェクトは「**生レスポンス (**`ApiResponse`**) を API 層で受け、**`converter` **で用途向けデータクラスへ変換し、最後に PyMOL へ適用**」する構成です。
-
-
-| 層                      | 主な責務                                                                                                | 主な入力                              | 主な出力（データクラス/型）                                                                             |
-| ---------------------- | --------------------------------------------------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------ |
-| `src/core`             | 共通モデル・HTTP・キャッシュ・レスポンス検証                                                                            | -                                 | `StructureArtifact` / `AminoAcidSequence`                                                  |
-| `src/api`              | 外部 API 呼び出し（取得のみ）。`base.py` に `ApiResponse`                                                         | `accession: str`                  | `ApiResponse`                                                                              |
-| `src/services`         | API レスポンスの抽出/検証/取得オーケストレーション                                                                        | `ApiResponse` など                  | `StructureArtifact` / `AminoAcidSequence` / `SequenceValidationResult` / `UniprotFeatures` |
-| `src/converter`        | feature 集計（`feature_aggregation.py`）・`DomainInfo` 構築・色付与（`ApiResponse` 起点は `converter/pipeline.py`） | `ApiResponse` / `UniprotFeatures` | `DomainInfo`（`ColorDef` 付与済み）                                                              |
-| `src/molpaint/painter` | 色付与済み `DomainInfo` を検証し、PyMOL selection を組み立てて着色                                                    | `DomainInfo`（1 件）                 | PyMOL への `cmd.color()` 適用（副作用）                                                             |
-| `src/plugin/`          | PyMOL から呼ぶエントリ (`fetch_af`, `register_`*, `paint_feature`)                                          | コマンド引数                            | 上記各層を接続して実行                                                                                |
-| `tests/`               | CLI 手動テスト（`test_feature_extract.py`, `test_alphafold_api.py`）                                       | コマンド引数                            | レスポンス表示・検証結果表示                                                                             |
-
-
 ### 主要データクラス（どこで使うか）
 
 - `ApiResponse`（`src/api/base.py`）
@@ -243,24 +227,25 @@ show_feature_domain_infos rg_P12345
   - 形: `ColorDef` は主に PyMOL の**色名**（`name`）。`DomainColorScheme.color_fill` が `list[DomainInfo]` にパレット色を割り当て
   - 用途: 着色前に `DomainColorScheme.color_fill` でリスト単位で埋め（色名は一覧内で重複しない）、`Painter` は `ColorDef.name` をそのまま `cmd.color` に渡す
 
-## データ形式と流れ（構造取得）
+## データ形式と流れ
+### 構造取得
 
-### 1) API 呼び出し
+#### 1) API 呼び出し
 
 - `AlphafoldApiClient.get_prediction(accession) -> ApiResponse`
 - `ApiResponse.body` は AlphaFold の JSON（`dict` または `list[dict]`）を保持
 
-### 2) URL 抽出・形式決定
+#### 2) URL 抽出・形式決定
 
 - `AlphaFoldDBClient`（`services/alphafold_extractor.py`）`pick_structure_url(resp, accession) -> tuple[url: str, fmt: str]`
 - `fmt` は既定優先順 `("cif", "pdb", "bcif")`
 
-### 3) 取得成果物へ変換
+#### 3) 取得成果物へ変換
 
 - `AlphaFoldDBFetcherClient`（`src/api/alphafold.py`）`fetch_structure(...) -> StructureArtifact`
 - `StructureArtifact.local_path` は実ファイルの保存先を指す
 
-### 4) PyMOL 適用
+#### 4) PyMOL 適用
 
 - `src/plugin/fetch_af_structure.py` の `fetch_af` が `cmd.load(str(artifact.local_path), ...)` を実行
 
@@ -270,7 +255,7 @@ show_feature_domain_infos rg_P12345
 - サブ: `alphafold`
 - ファイル名: `AF_{accession}.{cif|pdb|bcif}`
 
-## データ形式と流れ（配列検証）
+### 配列検証
 
 1. AlphaFold 側:
   - `ApiResponse.body` から `uniprotSequence`（または `sequence`）を抽出
@@ -282,22 +267,15 @@ show_feature_domain_infos rg_P12345
   - `validate_sequence(af_sequence, uniprot_sequence) -> SequenceValidationResult`
   - `match` と `message` を PyMOL/CLI に表示
 
-## データ形式と流れ（トポロジー着色）
-
-**accession から進める場合**
+### トポロジー着色
 
 1. `UniprotApiClients.get_search_response(accession) -> ApiResponse` で UniProt を取得し、`domain_infos_from_response(resp, accession=..., config=..., chain=...)`（`src/converter/pipeline.py`）で `list[DomainInfo]` を得る（PyMOL の `preview_feature_domains_from_accession` / `register_feature_domain_subset` はこの流れをラップしている）
 
-`**ApiResponse` だけ渡す場合（テストや再利用向け）**
 
-1. `domain_infos_from_response(...)`（`converter/pipeline.py`）で着色**前**の `list[DomainInfo]` を得て、必要なら呼び出し側で `DomainColorScheme().color_fill(...)`（テスト `test_feature_extract.py` も同様）
-
-**共通の内部処理**
-
-1. 抽出: `UniprotExtractor.extract_features(resp, accession=...) -> list[UniprotFeatures]`
+2. 抽出: `UniprotExtractor.extract_features(resp, accession=...) -> list[UniprotFeatures]`
   - 各 `UniprotFeatures` は 1 件の feature について `feature`（型名）・`location`・`description` を保持する
-2. 成形: `DomainInfoFactory.extract_features(list[UniprotFeatures]) -> list[DomainInfo]`
+3. 成形: `DomainInfoFactory.extract_features(list[UniprotFeatures]) -> list[DomainInfo]`
   - 同一 `description` ごとにまとめた `DomainInfo`（`domain_name` は feature type、`description` は下位ラベル）
-3. 色付与: `DomainColorScheme().color_fill(list[DomainInfo])` で未設定分に `palette`（既定は `converter.color_palette.EXTRA_PYMOL_COLOR_NAMES`）を順に割り当て（一覧内で色名が重複しない）
-4. PyMOL 適用: `Painter.paint_domaininfo(cmd, object_name, domaininfo)` が `domaininfo.spans` から selection を組み立て、各 span に `cmd.color(color_name, selection)` を実行（`domaininfo` は 1 件ずつ）
+4. 色付与: `DomainColorScheme().color_fill(list[DomainInfo])` で未設定分に `palette`（既定は `converter.color_palette.EXTRA_PYMOL_COLOR_NAMES`）を順に割り当て（一覧内で色名が重複しない）
+5. PyMOL 適用: `Painter.paint_domaininfo(cmd, object_name, domaininfo)` が `domaininfo.spans` から selection を組み立て、各 span に `cmd.color(color_name, selection)` を実行（`domaininfo` は 1 件ずつ）
 
