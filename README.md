@@ -1,5 +1,6 @@
 <!-- omit from toc --> 
 # (pymol plugin) pymol_feature_painter
+![header](./figures/header.png)
 
 　本プロジェクトはオープンソースの分子構造グラフィクツールであるpymolのプラグインとして開発され、pymol上に表示されているタンパク質3Dモデルに対して、指定領域ごとの着色を施す機能を付与します。また、領域指定はcsvファイルによる指定およびUniprot APIから取得した feature 情報から指定することが可能です。3D構造データは AlphaFold DB から uniprotアクセッション番号をキーとして自動的にロードすることも可能です。
 
@@ -193,7 +194,7 @@ fetch_af P12345
 - ロードされる PyMOL オブジェクト名は `AF_{accession}` になります。
 - 初回取得時はキャッシュ（例: `~/.cache/pymol_topology/...`）へ保存し、2回目以降は再利用します。
 
-ロードされた3D構造データ
+![ロードされた3D構造データ](./figures/fetch_af.png)
 
 ### 3. UniProt からfeature 情報を登録
 <!-- omit from toc --> 
@@ -297,7 +298,7 @@ paint_feature rg_P12345, AF_P12345
 
 対象オブジェクトが未ロードの場合はエラーになります（自動では AlphaFold を取得しません）。
 
-着色後の3D構造データ
+![着色後の3D構造データ](./figures/painted_model.png)
 
 ### 7. 登録済みの feature 情報の閲覧
 <!-- omit from toc --> 
